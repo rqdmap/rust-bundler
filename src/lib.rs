@@ -8,10 +8,11 @@ pub struct Bundler<'a> {
     bin_file: &'a Path,
     file_ptr: Box<dyn Write>,
     file_buf: String,
+    one_line: bool,
 }
 
 impl<'a> Bundler<'a> {
-    pub fn new(crate_name: &'a str, bin_file: &'a str, target_file: &'a str) -> Self {
+    pub fn new(crate_name: &'a str, bin_file: &'a str, target_file: &'a str, one_line: bool) -> Self {
         let crate_name = Path::new(crate_name);
         let bin_file = Path::new(bin_file);
         let target_file = Path::new(target_file);
@@ -25,10 +26,11 @@ impl<'a> Bundler<'a> {
             bin_file,
             file_ptr,
             file_buf: String::new(),
+            one_line,
         }
     }
 
-    fn write_to_file(&mut self, content: String, level: u32) {
+    fn write_to_buf(&mut self, content: String, level: u32) {
         let mut indent = String::new();
         for _ in 0..level{
             indent.push_str("\t");
@@ -95,11 +97,19 @@ impl<'a> Bundler<'a> {
         self.file_buf = vec.join("\n");
     }
 
-    fn flush(&mut self) {
-        self.clean_inline_test_mod();
-        writeln!(self.file_ptr, "{}", self.file_buf).unwrap();
+
+    fn minify(&mut self) {
+        let mut vec = vec![];
+        for line in self.file_buf.lines() {
+            vec.push(line.trim_start().trim_end());
+        }
+
+        self.file_buf = vec.join(" ") + "\n";
     }
 
+    fn flush(&mut self) {
+        writeln!(self.file_ptr, "{}", self.file_buf).unwrap();
+    }
 
     // Bundle all library files recursively
     fn bundle_lib(&mut self, path: &str, name: &str, level: u32) {
@@ -138,30 +148,41 @@ impl<'a> Bundler<'a> {
                     if c == ';' { break; }
                 }
                 tmp_line.push_str(" {");
-                self.write_to_file(tmp_line, level);
+                self.write_to_buf(tmp_line, level);
                 let modname = cap.name("modname").unwrap().as_str();
 
                 self.bundle_lib(new_path, modname, level + 1);
 
-                self.write_to_file("}".to_string(), level);
+                self.write_to_buf("}".to_string(), level);
             }
             else {
-                self.write_to_file(line, level);
+                self.write_to_buf(line, level);
             }
         }
     }
 
     pub fn run(&mut self){
-        self.write_to_file(format!("pub mod {} {{", self.crate_name.to_str().unwrap()), 0);
+        self.write_to_buf(format!("pub mod {} {{", self.crate_name.to_str().unwrap()), 0);
         self.bundle_lib("src/", "lib", 1);
-        self.write_to_file("}".to_string(), 0);
+        self.write_to_buf("}".to_string(), 0);
+
+        self.clean_inline_test_mod();
+        if self.one_line { self.minify(); }
 
         let file = File::open(self.bin_file).unwrap();
         let reader = BufReader::new(file);
         for line in reader.lines() {
-            self.write_to_file(line.unwrap(), 0);
+            self.write_to_buf(line.unwrap(), 0);
         }
 
         self.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_bundle_bin() {
+        assert_eq!(1, 1);
     }
 }
