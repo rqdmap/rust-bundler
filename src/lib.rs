@@ -9,6 +9,7 @@ pub struct Bundler<'a> {
     file_ptr: Box<dyn Write>,
     file_buf: String,
     one_line: bool,
+    banner_file: Option<String>,
 }
 
 impl<'a> Bundler<'a> {
@@ -27,21 +28,41 @@ impl<'a> Bundler<'a> {
             file_ptr,
             file_buf: String::new(),
             one_line,
+            banner_file: None,
         }
     }
 
-    fn write_to_buf(&mut self, content: String, level: u32) {
+    pub fn set_banner(&mut self, banner: &str) {
+        self.banner_file = Some(banner.to_string());
+    }
+
+    fn write_to_buf_raw(&mut self, content: String, level: u32, keep_comment: bool) {
         let mut indent = String::new();
         for _ in 0..level{
             indent.push_str("\t");
         }
 
-        let comment_re = Regex::new(r"^\s*//.*$").unwrap();
-        if comment_re.is_match(&content) { return; }
+        if !keep_comment {
+            let comment_re = Regex::new(r"^\s*//.*$").unwrap();
+            if comment_re.is_match(&content) { return; }
+        }
 
         // println!("{}{}", indent, content);
         // writeln!(self.file_ptr, "{}{}", indent, content).unwrap();
         self.file_buf += format!("{}{}\n", indent, content).as_str();
+    }
+
+    fn write_to_buf(&mut self, content: String, level: u32) {
+        self.write_to_buf_raw(content, level, false);
+    }
+
+    fn write_to_buf_keep_comment(&mut self, content: String, level: u32) {
+        self.write_to_buf_raw(content, level, true);
+    }
+
+    fn flush(&mut self) {
+        writeln!(self.file_ptr, "{}", self.file_buf).unwrap();
+        self.file_buf.clear();
     }
 
     fn query_mod_block(vec: &Vec<&str>, lineno: usize) -> (usize, usize) {
@@ -107,10 +128,6 @@ impl<'a> Bundler<'a> {
         self.file_buf = vec.join(" ") + "\n";
     }
 
-    fn flush(&mut self) {
-        writeln!(self.file_ptr, "{}", self.file_buf).unwrap();
-    }
-
     // Bundle all library files recursively
     fn bundle_lib(&mut self, path: &str, name: &str, level: u32) {
         // println!("[DEBUG]path = {}, name = {}", path, name);
@@ -162,6 +179,15 @@ impl<'a> Bundler<'a> {
     }
 
     pub fn run(&mut self){
+        if let Some(banner_file) = &self.banner_file {
+            let file = File::open(banner_file).unwrap();
+            let reader = BufReader::new(file);
+            for line in reader.lines() {
+                self.write_to_buf_keep_comment(line.unwrap(), 0);
+            }
+            self.flush();
+        }
+
         self.write_to_buf(format!("pub mod {} {{", self.crate_name.to_str().unwrap()), 0);
         self.bundle_lib("src/", "lib", 1);
         self.write_to_buf("}".to_string(), 0);
@@ -174,7 +200,6 @@ impl<'a> Bundler<'a> {
         for line in reader.lines() {
             self.write_to_buf(line.unwrap(), 0);
         }
-
         self.flush();
     }
 }
