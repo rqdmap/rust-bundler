@@ -120,6 +120,7 @@ impl<'a> Bundler<'a> {
 
     fn fix_use_crate(&mut self) {
         self.file_buf = self.file_buf.replace("crate::", format!("crate::{}::", self.crate_name.to_str().unwrap()).as_str());
+        self.file_buf = self.file_buf.replace(format!("$crate::{}::", self.crate_name.to_str().unwrap()).as_str(), "$crate::");
     }
 
 
