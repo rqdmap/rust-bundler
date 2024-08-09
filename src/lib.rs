@@ -118,6 +118,11 @@ impl<'a> Bundler<'a> {
         self.file_buf = vec.join("\n");
     }
 
+    fn fix_use_crate(&mut self) {
+        self.file_buf = self.file_buf.replace("crate::", format!("crate::{}::", self.crate_name.to_str().unwrap()).as_str());
+        self.file_buf = self.file_buf.replace(format!("$crate::{}::", self.crate_name.to_str().unwrap()).as_str(), "$crate::");
+    }
+
 
     fn minify(&mut self) {
         let mut vec = vec![];
@@ -193,6 +198,7 @@ impl<'a> Bundler<'a> {
         self.write_to_buf("}".to_string(), 0);
 
         self.clean_inline_test_mod();
+        self.fix_use_crate();
         if self.one_line { self.minify(); }
 
         let file = File::open(self.bin_file).unwrap();
